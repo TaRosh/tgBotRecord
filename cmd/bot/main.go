@@ -8,8 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/TaRosh/tgBotRecord/internal/booking"
 	"github.com/TaRosh/tgBotRecord/internal/config"
+	"github.com/TaRosh/tgBotRecord/internal/storage/memory"
+	"github.com/TaRosh/tgBotRecord/internal/telegram"
 )
 
 func main() {
@@ -42,8 +46,15 @@ func run(ctx context.Context, getenv func(string) string, out io.Writer) error {
 		"log_level", cfg.LogLevel.String(),
 	)
 
-	// TODO(шаг 2): здесь будет запуск Telegram-бота.
-	<-ctx.Done()
+	// Сборка зависимостей: хранилище -> бизнес-логика -> Telegram.
+	// TODO(шаг 3): заменить memory на SQLite (cfg.DBPath).
+	repo := memory.New()
+	svc := booking.NewService(repo, cfg.AdminID, time.Now)
+	router := telegram.NewRouter(svc, cfg.AdminID, cfg.Location, time.Now, log)
+
+	if err := telegram.Run(ctx, cfg.BotToken, router, log); err != nil {
+		return err
+	}
 
 	log.Info("bot stopped")
 	return nil
