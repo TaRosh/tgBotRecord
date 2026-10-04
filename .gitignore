@@ -1,0 +1,13 @@
+# Секреты: SSH-ключи и локальный конфиг никогда не коммитим
+deploy_key
+deploy_key.pub
+.env
+
+# Данные и артефакты сборки
+/data/
+/bin/
+*.db
+
+# IDE
+.idea/
+.vscode/

@@ -1,0 +1,22 @@
+services:
+  # Окружение разработки: Go ставить локально не нужно.
+  #   docker compose run --rm dev go test ./...
+  #   docker compose run --rm dev go run ./cmd/bot
+  dev:
+    image: golang:1.27
+    working_dir: /app
+    volumes:
+      - .:/app
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    # Значения подставляются из файла .env (если он есть)
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      ADMIN_ID: ${ADMIN_ID:-}
+      TIMEZONE: ${TIMEZONE:-}
+      DB_PATH: ${DB_PATH:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+
+volumes:
+  gomod:
+  gocache:
