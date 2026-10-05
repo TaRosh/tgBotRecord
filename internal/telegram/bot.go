@@ -12,7 +12,8 @@ import (
 
 // Run подключается к Telegram и обрабатывает сообщения, пока не отменён ctx.
 // Это тонкий адаптер: вся логика в Router, здесь только приём и отправка.
-func Run(ctx context.Context, token string, router *Router, log *slog.Logger) error {
+// opts — дополнительные настройки библиотеки (в тестах — адрес фальшивого сервера).
+func Run(ctx context.Context, token string, router *Router, log *slog.Logger, opts ...bot.Option) error {
 	handler := func(ctx context.Context, b *bot.Bot, update *models.Update) {
 		msg := update.Message
 		// Работаем только с текстом в личных сообщениях: в группах у бота записи нет.
@@ -33,10 +34,11 @@ func Run(ctx context.Context, token string, router *Router, log *slog.Logger) er
 		}
 	}
 
-	b, err := bot.New(token,
+	opts = append([]bot.Option{
 		bot.WithDefaultHandler(handler),
 		bot.WithErrorsHandler(func(err error) { log.Error("telegram", "err", err) }),
-	)
+	}, opts...)
+	b, err := bot.New(token, opts...)
 	if err != nil {
 		return fmt.Errorf("create telegram bot: %w", err)
 	}
