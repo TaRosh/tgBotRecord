@@ -1,0 +1,34 @@
+# Запуск бота как системного сервиса Linux (вариант без Docker).
+#
+# Установка на сервере (Ubuntu/Debian):
+#   sudo useradd --system --no-create-home tgbot
+#   sudo mkdir -p /opt/tgbot/data && sudo chown -R tgbot: /opt/tgbot
+#   скопировать бинарник в /opt/tgbot/bot и .env в /opt/tgbot/.env
+#   sudo cp tgbotrecord.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tgbotrecord
+#
+# Логи: journalctl -u tgbotrecord -f
+
+[Unit]
+Description=Telegram booking bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tgbot
+WorkingDirectory=/opt/tgbot
+EnvironmentFile=/opt/tgbot/.env
+Environment=DB_PATH=/opt/tgbot/data/bot.db
+ExecStart=/opt/tgbot/bot
+Restart=always
+RestartSec=5
+
+# Ограничения безопасности: бот может писать только в папку с базой.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/tgbot/data
+
+[Install]
+WantedBy=multi-user.target

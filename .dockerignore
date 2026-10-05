@@ -1,0 +1,9 @@
+# В образ попадает только то, что нужно для сборки
+.git
+.env
+deploy_key
+deploy_key.pub
+data/
+*.db
+Dockerfile
+compose.yaml

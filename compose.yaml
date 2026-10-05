@@ -1,8 +1,29 @@
 services:
-  # Окружение разработки: Go ставить локально не нужно.
+  # Боевой запуск:
+  #   docker compose up -d --build   — собрать и запустить в фоне
+  #   docker compose logs -f bot     — смотреть логи
+  #   docker compose down            — остановить (данные в томе сохранятся)
+  bot:
+    build: .
+    image: tgbotrecord:latest
+    restart: unless-stopped # поднимется после падения и перезагрузки сервера
+    env_file: .env
+    environment:
+      DB_PATH: /data/bot.db # в контейнере база всегда в томе
+    volumes:
+      - botdata:/data
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options: # без ограничения логи со временем займут весь диск
+        max-size: 10m
+        max-file: "3"
+
+  # Окружение разработки (не стартует при `up`, только через `run`):
   #   docker compose run --rm dev go test ./...
   #   docker compose run --rm dev go run ./cmd/bot
   dev:
+    profiles: [dev]
     image: golang:1.27
     working_dir: /app
     volumes:
@@ -18,5 +39,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-}
 
 volumes:
+  botdata:
   gomod:
   gocache:
