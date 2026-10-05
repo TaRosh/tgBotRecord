@@ -17,9 +17,11 @@ type Client struct {
 // Slot — окно для записи, которое создаёт мастер.
 // Если Client == nil, окно свободно.
 type Slot struct {
-	ID     int64
-	Start  time.Time
-	Client *Client
+	ID       int64
+	Start    time.Time
+	Client   *Client
+	BookedAt time.Time // когда клиент записался (нулевое, если окно свободно)
+	Reminded bool      // напоминание уже отправлено
 }
 
 // IsFree сообщает, свободно ли окно.
@@ -43,10 +45,15 @@ type Repository interface {
 	Create(ctx context.Context, start time.Time) (Slot, error)
 	// Get возвращает окно по ID или ErrNotFound.
 	Get(ctx context.Context, id int64) (Slot, error)
-	// Book атомарно занимает окно: ErrSlotTaken, если оно уже занято.
-	Book(ctx context.Context, id int64, client Client) error
-	// Release освобождает окно (отмена записи).
+	// Book атомарно занимает окно, запоминая время записи at:
+	// ErrSlotTaken, если оно уже занято.
+	Book(ctx context.Context, id int64, client Client, at time.Time) error
+	// Release освобождает окно (отмена записи) и сбрасывает отметку о напоминании.
 	Release(ctx context.Context, id int64) error
+	// MarkReminded атомарно отмечает, что клиенту clientID напомнили об окне id.
+	// Возвращает false, если отмечать нечего: окно отменено, занято другим
+	// клиентом или напоминание уже отправлено. Это защищает от дублей.
+	MarkReminded(ctx context.Context, id, clientID int64) (bool, error)
 	// ListFrom возвращает окна с Start >= from, отсортированные по времени.
 	ListFrom(ctx context.Context, from time.Time) ([]Slot, error)
 }

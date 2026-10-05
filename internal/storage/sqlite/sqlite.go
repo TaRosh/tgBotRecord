@@ -18,17 +18,8 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-// Время храним как Unix-секунды в UTC: целое число однозначно,
-// не зависит от часового пояса и правильно сортируется.
-// UNIQUE(start_at) автоматически создаёт индекс (B-дерево), поэтому
-// поиск "окна начиная с даты" с сортировкой не читает всю таблицу.
-const schema = `
-CREATE TABLE IF NOT EXISTS slots (
-	id          INTEGER PRIMARY KEY AUTOINCREMENT,
-	start_at    INTEGER NOT NULL UNIQUE,
-	client_id   INTEGER,
-	client_name TEXT
-);`
+// slotColumns — порядок колонок, который ожидает scanSlot.
+const slotColumns = "id, start_at, client_id, client_name, booked_at, reminded"
 
 // Repo реализует booking.Repository.
 type Repo struct {
@@ -50,10 +41,10 @@ func Open(ctx context.Context, path string) (*Repo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	// sql.Open не подключается сразу — проверяем соединение и создаём таблицу.
-	if _, err := db.ExecContext(ctx, schema); err != nil {
+	// sql.Open не подключается сразу — миграции заодно проверяют соединение.
+	if err := migrate(ctx, db); err != nil {
 		// errors.Join отбрасывает nil, поэтому успешный Close не попадёт в текст ошибки.
-		return nil, errors.Join(fmt.Errorf("apply schema: %w", err), db.Close())
+		return nil, errors.Join(err, db.Close())
 	}
 	return &Repo{db: db}, nil
 }
@@ -77,7 +68,7 @@ func (r *Repo) Create(ctx context.Context, start time.Time) (booking.Slot, error
 
 func (r *Repo) Get(ctx context.Context, id int64) (booking.Slot, error) {
 	row := r.db.QueryRowContext(ctx,
-		`SELECT id, start_at, client_id, client_name FROM slots WHERE id = ?`, id)
+		`SELECT `+slotColumns+` FROM slots WHERE id = ?`, id)
 	s, err := scanSlot(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return booking.Slot{}, booking.ErrNotFound
@@ -85,13 +76,14 @@ func (r *Repo) Get(ctx context.Context, id int64) (booking.Slot, error) {
 	return s, err
 }
 
-func (r *Repo) Book(ctx context.Context, id int64, client booking.Client) error {
+func (r *Repo) Book(ctx context.Context, id int64, client booking.Client, at time.Time) error {
 	// Атомарность обеспечивает сама база: условие "client_id IS NULL"
 	// проверяется и запись выполняется одной командой. Из двух одновременных
 	// UPDATE строку изменит только первый, второй получит 0 изменённых строк.
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE slots SET client_id = ?, client_name = ? WHERE id = ? AND client_id IS NULL`,
-		client.ID, client.Name, id)
+		`UPDATE slots SET client_id = ?, client_name = ?, booked_at = ?, reminded = 0
+		 WHERE id = ? AND client_id IS NULL`,
+		client.ID, client.Name, at.Unix(), id)
 	if err != nil {
 		return fmt.Errorf("book slot: %w", err)
 	}
@@ -109,7 +101,8 @@ func (r *Repo) Book(ctx context.Context, id int64, client booking.Client) error 
 
 func (r *Repo) Release(ctx context.Context, id int64) error {
 	res, err := r.db.ExecContext(ctx,
-		`UPDATE slots SET client_id = NULL, client_name = NULL WHERE id = ?`, id)
+		`UPDATE slots SET client_id = NULL, client_name = NULL, booked_at = NULL, reminded = 0
+		 WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("release slot: %w", err)
 	}
@@ -123,9 +116,25 @@ func (r *Repo) Release(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *Repo) MarkReminded(ctx context.Context, id, clientID int64) (bool, error) {
+	// Все условия в WHERE: отмечаем, только если окно всё ещё за этим клиентом
+	// и напоминания не было. Два одновременных вызова не отметят его дважды.
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE slots SET reminded = 1 WHERE id = ? AND client_id = ? AND reminded = 0`,
+		id, clientID)
+	if err != nil {
+		return false, fmt.Errorf("mark reminded: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+	return n == 1, nil
+}
+
 func (r *Repo) ListFrom(ctx context.Context, from time.Time) ([]booking.Slot, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, start_at, client_id, client_name FROM slots
+		`SELECT `+slotColumns+` FROM slots
 		 WHERE start_at >= ? ORDER BY start_at`, from.Unix())
 	if err != nil {
 		return nil, fmt.Errorf("list slots: %w", err)
@@ -158,8 +167,9 @@ func scanSlot(sc scanner) (booking.Slot, error) {
 		startAt    int64
 		clientID   sql.NullInt64 // NULL в базе — это "окно свободно"
 		clientName sql.NullString
+		bookedAt   sql.NullInt64
 	)
-	if err := sc.Scan(&s.ID, &startAt, &clientID, &clientName); err != nil {
+	if err := sc.Scan(&s.ID, &startAt, &clientID, &clientName, &bookedAt, &s.Reminded); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return booking.Slot{}, err
 		}
@@ -168,6 +178,9 @@ func scanSlot(sc scanner) (booking.Slot, error) {
 	s.Start = fromUnix(startAt)
 	if clientID.Valid {
 		s.Client = &booking.Client{ID: clientID.Int64, Name: clientName.String}
+		if bookedAt.Valid { // NULL — запись сделана до появления напоминаний
+			s.BookedAt = fromUnix(bookedAt.Int64)
+		}
 	}
 	return s, nil
 }

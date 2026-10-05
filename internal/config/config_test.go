@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 // envFrom превращает map в функцию-аналог os.Getenv.
@@ -22,25 +23,32 @@ func TestLoad(t *testing.T) {
 		{
 			name: "all values set",
 			env: map[string]string{
-				"BOT_TOKEN": "123:abc",
-				"ADMIN_ID":  "42",
-				"TIMEZONE":  "Asia/Yekaterinburg",
-				"DB_PATH":   "/tmp/test.db",
-				"LOG_LEVEL": "debug",
+				"BOT_TOKEN":     "123:abc",
+				"ADMIN_ID":      "42",
+				"TIMEZONE":      "Asia/Yekaterinburg",
+				"DB_PATH":       "/tmp/test.db",
+				"LOG_LEVEL":     "debug",
+				"REMIND_BEFORE": "2h30m",
 			},
-			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: "/tmp/test.db", LogLevel: slog.LevelDebug},
+			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: "/tmp/test.db", LogLevel: slog.LevelDebug, RemindBefore: 150 * time.Minute},
 			wantTZ: "Asia/Yekaterinburg",
 		},
 		{
 			name:   "defaults applied",
 			env:    map[string]string{"BOT_TOKEN": "123:abc", "ADMIN_ID": "42"},
-			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: defaultDBPath, LogLevel: slog.LevelInfo},
+			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: defaultDBPath, LogLevel: slog.LevelInfo, RemindBefore: defaultRemind},
 			wantTZ: defaultTimezone,
 		},
 		{
 			name:   "values are trimmed",
 			env:    map[string]string{"BOT_TOKEN": "  123:abc ", "ADMIN_ID": " 42 ", "LOG_LEVEL": " WARN "},
-			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: defaultDBPath, LogLevel: slog.LevelWarn},
+			want:   Config{BotToken: "123:abc", AdminID: 42, DBPath: defaultDBPath, LogLevel: slog.LevelWarn, RemindBefore: defaultRemind},
+			wantTZ: defaultTimezone,
+		},
+		{
+			name:   "reminders disabled",
+			env:    map[string]string{"BOT_TOKEN": "t", "ADMIN_ID": "1", "REMIND_BEFORE": "0"},
+			want:   Config{BotToken: "t", AdminID: 1, DBPath: defaultDBPath, LogLevel: slog.LevelInfo, RemindBefore: 0},
 			wantTZ: defaultTimezone,
 		},
 		{
@@ -62,6 +70,16 @@ func TestLoad(t *testing.T) {
 			name:    "unknown timezone",
 			env:     map[string]string{"BOT_TOKEN": "t", "ADMIN_ID": "1", "TIMEZONE": "Mars/Olympus"},
 			wantErr: []string{"unknown time zone"},
+		},
+		{
+			name:    "remind before not a duration",
+			env:     map[string]string{"BOT_TOKEN": "t", "ADMIN_ID": "1", "REMIND_BEFORE": "24"},
+			wantErr: []string{"REMIND_BEFORE"},
+		},
+		{
+			name:    "remind before negative",
+			env:     map[string]string{"BOT_TOKEN": "t", "ADMIN_ID": "1", "REMIND_BEFORE": "-1h"},
+			wantErr: []string{"REMIND_BEFORE"},
 		},
 		{
 			name:    "unknown log level",
@@ -90,7 +108,8 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got.BotToken != tt.want.BotToken || got.AdminID != tt.want.AdminID ||
-				got.DBPath != tt.want.DBPath || got.LogLevel != tt.want.LogLevel {
+				got.DBPath != tt.want.DBPath || got.LogLevel != tt.want.LogLevel ||
+				got.RemindBefore != tt.want.RemindBefore {
 				t.Errorf("got %+v, want %+v", got, tt.want)
 			}
 			if got.Location == nil || got.Location.String() != tt.wantTZ {

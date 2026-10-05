@@ -48,7 +48,7 @@ func (r *Repo) Get(_ context.Context, id int64) (booking.Slot, error) {
 	return copySlot(s), nil
 }
 
-func (r *Repo) Book(_ context.Context, id int64, client booking.Client) error {
+func (r *Repo) Book(_ context.Context, id int64, client booking.Client, at time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -61,6 +61,8 @@ func (r *Repo) Book(_ context.Context, id int64, client booking.Client) error {
 		return booking.ErrSlotTaken
 	}
 	s.Client = &client
+	s.BookedAt = at
+	s.Reminded = false
 	r.slots[id] = s
 	return nil
 }
@@ -74,8 +76,23 @@ func (r *Repo) Release(_ context.Context, id int64) error {
 		return booking.ErrNotFound
 	}
 	s.Client = nil
+	s.BookedAt = time.Time{}
+	s.Reminded = false
 	r.slots[id] = s
 	return nil
+}
+
+func (r *Repo) MarkReminded(_ context.Context, id, clientID int64) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	s, ok := r.slots[id]
+	if !ok || s.IsFree() || s.Client.ID != clientID || s.Reminded {
+		return false, nil
+	}
+	s.Reminded = true
+	r.slots[id] = s
+	return true, nil
 }
 
 func (r *Repo) ListFrom(_ context.Context, from time.Time) ([]booking.Slot, error) {

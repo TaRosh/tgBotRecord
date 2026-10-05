@@ -2,6 +2,7 @@ package booking
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -11,6 +12,8 @@ type Service struct {
 	repo    Repository
 	adminID int64
 	now     func() time.Time // подменяется в тестах, чтобы "сейчас" было фиксированным
+
+	onBooked []func(Slot)
 }
 
 // NewService создаёт сервис. now — источник текущего времени:
@@ -69,11 +72,62 @@ func (s *Service) Book(ctx context.Context, slotID int64, client Client) (Slot, 
 	// Проверку "свободно ли" делает сам репозиторий атомарно:
 	// если проверить здесь, а записать потом, два клиента успеют
 	// занять одно окно между проверкой и записью (race condition).
-	if err := s.repo.Book(ctx, slotID, client); err != nil {
+	now := s.now()
+	if err := s.repo.Book(ctx, slotID, client, now); err != nil {
 		return Slot{}, err
 	}
 	slot.Client = &client
+	slot.BookedAt = now
+	slot.Reminded = false
+	for _, hook := range s.onBooked {
+		hook(slot)
+	}
 	return slot, nil
+}
+
+// OnBooked регистрирует функцию, которая вызывается после каждой успешной записи
+// (например, чтобы запланировать напоминание). Функция не должна блокироваться.
+// Регистрировать нужно до начала обработки сообщений.
+func (s *Service) OnBooked(hook func(Slot)) {
+	s.onBooked = append(s.onBooked, hook)
+}
+
+// PendingReminders возвращает записи, которым ещё предстоит напоминание.
+func (s *Service) PendingReminders(ctx context.Context, before time.Duration) ([]Slot, error) {
+	now := s.now()
+	return s.upcoming(ctx, func(sl Slot) bool { return needsReminder(sl, before, now) })
+}
+
+// ClaimReminder проверяет, нужно ли ещё напоминание об окне, и атомарно
+// отмечает его отправленным. ok == true означает: напоминание "наше", отправляйте.
+// Отметка ставится ДО отправки: при сбое отправки клиент не получит напоминание,
+// зато никогда не получит его дважды (доставка "не более одного раза").
+func (s *Service) ClaimReminder(ctx context.Context, slotID int64, before time.Duration) (slot Slot, ok bool, err error) {
+	slot, err = s.repo.Get(ctx, slotID)
+	if errors.Is(err, ErrNotFound) {
+		return Slot{}, false, nil
+	}
+	if err != nil {
+		return Slot{}, false, err
+	}
+	if !needsReminder(slot, before, s.now()) {
+		return Slot{}, false, nil
+	}
+	ok, err = s.repo.MarkReminded(ctx, slotID, slot.Client.ID)
+	if err != nil || !ok {
+		return Slot{}, false, err
+	}
+	slot.Reminded = true
+	return slot, true, nil
+}
+
+// needsReminder — единое правило "нужно ли напоминать":
+// окно занято, напоминания ещё не было, визит не начался, и клиент записался
+// раньше момента напоминания (тому, кто записался за час, напоминать нечего).
+func needsReminder(sl Slot, before time.Duration, now time.Time) bool {
+	return !sl.IsFree() && !sl.Reminded &&
+		sl.Start.After(now) &&
+		sl.BookedAt.Before(sl.Start.Add(-before))
 }
 
 // Cancel отменяет запись. Клиент может отменить только свою, мастер — любую.

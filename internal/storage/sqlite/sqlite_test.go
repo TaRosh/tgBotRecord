@@ -45,7 +45,7 @@ func TestDataSurvivesReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Book(ctx, s.ID, booking.Client{ID: 7, Name: "Анна"}); err != nil {
+	if err := r.Book(ctx, s.ID, booking.Client{ID: 7, Name: "Анна"}, start.Add(-72*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
 	r.Close()
@@ -79,8 +79,9 @@ func TestClosedDatabaseErrors(t *testing.T) {
 	}{
 		{"Create", func() error { _, err := r.Create(ctx, time.Now()); return err }},
 		{"Get", func() error { _, err := r.Get(ctx, 1); return err }},
-		{"Book", func() error { return r.Book(ctx, 1, booking.Client{ID: 1}) }},
+		{"Book", func() error { return r.Book(ctx, 1, booking.Client{ID: 1}, time.Now()) }},
 		{"Release", func() error { return r.Release(ctx, 1) }},
+		{"MarkReminded", func() error { _, err := r.MarkReminded(ctx, 1, 1); return err }},
 		{"ListFrom", func() error { _, err := r.ListFrom(ctx, time.Now()); return err }},
 	}
 	for _, c := range calls {

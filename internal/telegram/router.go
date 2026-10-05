@@ -71,6 +71,12 @@ func (r *Router) Handle(ctx context.Context, req Request) Response {
 	}
 }
 
+// ReminderText — текст напоминания клиенту о предстоящей записи.
+func (r *Router) ReminderText(slot booking.Slot) string {
+	return fmt.Sprintf("Напоминание: вы записаны на %s.\nЕсли планы изменились, отмените запись: /cancel %d",
+		formatTime(slot.Start, r.loc), slot.ID)
+}
+
 func (r *Router) help(userID int64) string {
 	if r.svc.IsAdmin(userID) {
 		return adminHelp

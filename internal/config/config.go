@@ -14,6 +14,7 @@ import (
 const (
 	defaultTimezone = "Europe/Moscow"
 	defaultDBPath   = "data/bot.db"
+	defaultRemind   = 24 * time.Hour
 )
 
 // Config — все настройки бота. Заполняется один раз при старте.
@@ -23,6 +24,8 @@ type Config struct {
 	Location *time.Location
 	DBPath   string
 	LogLevel slog.Level
+	// RemindBefore — за сколько до записи напомнить клиенту; 0 — не напоминать.
+	RemindBefore time.Duration
 }
 
 // Load читает конфиг через getenv. В main передаётся os.Getenv,
@@ -59,6 +62,15 @@ func Load(getenv func(string) string) (Config, error) {
 	level := withDefault(getenv("LOG_LEVEL"), "info")
 	if err := cfg.LogLevel.UnmarshalText([]byte(level)); err != nil {
 		errs = append(errs, fmt.Errorf("LOG_LEVEL: unknown level %q (use debug|info|warn|error)", level))
+	}
+
+	cfg.RemindBefore = defaultRemind
+	if raw := strings.TrimSpace(getenv("REMIND_BEFORE")); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil || d < 0 {
+			errs = append(errs, fmt.Errorf("REMIND_BEFORE: want duration like 24h or 2h30m (0 disables), got %q", raw))
+		}
+		cfg.RemindBefore = d
 	}
 
 	if len(errs) > 0 {

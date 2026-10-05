@@ -20,9 +20,10 @@ type brokenRepo struct{}
 func (brokenRepo) Create(context.Context, time.Time) (booking.Slot, error) {
 	return booking.Slot{}, errDB
 }
-func (brokenRepo) Get(context.Context, int64) (booking.Slot, error)  { return booking.Slot{}, errDB }
-func (brokenRepo) Book(context.Context, int64, booking.Client) error { return errDB }
-func (brokenRepo) Release(context.Context, int64) error              { return errDB }
+func (brokenRepo) Get(context.Context, int64) (booking.Slot, error)             { return booking.Slot{}, errDB }
+func (brokenRepo) Book(context.Context, int64, booking.Client, time.Time) error { return errDB }
+func (brokenRepo) MarkReminded(context.Context, int64, int64) (bool, error)     { return false, errDB }
+func (brokenRepo) Release(context.Context, int64) error                         { return errDB }
 func (brokenRepo) ListFrom(context.Context, time.Time) ([]booking.Slot, error) {
 	return nil, errDB
 }

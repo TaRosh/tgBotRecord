@@ -71,7 +71,7 @@ func message(updateID int, chatType models.ChatType, userID int64, text string) 
 		updateID, updateID, userID, chatType, userID, text)
 }
 
-func TestRunEndToEnd(t *testing.T) {
+func TestBotEndToEnd(t *testing.T) {
 	// Окно #1 через 1 час, чтобы клиент мог на него записаться.
 	svc := booking.NewService(memory.New(), adminID, time.Now)
 	if _, err := svc.AddSlot(context.Background(), adminID, time.Now().Add(time.Hour)); err != nil {
@@ -85,8 +85,12 @@ func TestRunEndToEnd(t *testing.T) {
 	url, sent := fakeTelegram(t, updates)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- Run(ctx, testToken, router, log, bot.WithServerURL(url)) }()
+	tg, err := NewBot(testToken, router, log, bot.WithServerURL(url))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { tg.Start(ctx); close(done) }()
 
 	// Ждём ровно два сообщения: ответ клиенту и уведомление мастеру (порядок не важен).
 	got := map[int64]string{}
@@ -112,21 +116,35 @@ func TestRunEndToEnd(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
+	// Напоминание уходит клиенту с номером записи для отмены.
+	booked, err := svc.ClientBookings(ctx, clientID)
+	if err != nil || len(booked) != 1 {
+		t.Fatalf("client bookings: %v, %v", booked, err)
+	}
+	if err := tg.SendReminder(ctx, booked[0]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case m := <-sent:
+		if m.ChatID != clientID || !strings.Contains(m.Text, "Напоминание") || !strings.Contains(m.Text, "/cancel 1") {
+			t.Errorf("reminder = %+v", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reminder not sent")
+	}
+
 	// Отмена контекста (как SIGTERM) должна корректно остановить бота.
 	cancel()
 	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run returned %v", err)
-		}
+	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not stop after context cancel")
+		t.Fatal("bot did not stop after context cancel")
 	}
 }
 
-func TestRunInvalidToken(t *testing.T) {
+func TestNewBotInvalidToken(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if err := Run(context.Background(), " ", nil, log); err == nil {
+	if _, err := NewBot(" ", nil, log); err == nil {
 		t.Fatal("expected error for empty token")
 	}
 }
