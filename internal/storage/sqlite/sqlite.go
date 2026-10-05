@@ -37,7 +37,8 @@ type Repo struct {
 
 // Open открывает (или создаёт) базу по пути path и применяет схему.
 func Open(ctx context.Context, path string) (*Repo, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0750: в базе персональные данные клиентов, другим пользователям сервера доступа нет.
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
@@ -51,8 +52,8 @@ func Open(ctx context.Context, path string) (*Repo, error) {
 	}
 	// sql.Open не подключается сразу — проверяем соединение и создаём таблицу.
 	if _, err := db.ExecContext(ctx, schema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("apply schema: %w", err)
+		// errors.Join отбрасывает nil, поэтому успешный Close не попадёт в текст ошибки.
+		return nil, errors.Join(fmt.Errorf("apply schema: %w", err), db.Close())
 	}
 	return &Repo{db: db}, nil
 }

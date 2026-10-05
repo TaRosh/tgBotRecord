@@ -1,0 +1,81 @@
+# Команды проекта: https://taskfile.dev
+# Установка на Windows: winget install Task.Task
+# Список задач: task --list
+version: '3'
+
+vars:
+  DEV: docker compose run --rm dev
+  LINT: docker compose run --rm lint
+
+tasks:
+  default:
+    desc: Показать список задач
+    silent: true
+    cmds:
+      - task --list
+
+  # --- Разработка ---
+
+  test:
+    desc: Запустить тесты (с детектором гонок)
+    cmds:
+      - '{{.DEV}} go test -race ./...'
+
+  cover:
+    desc: Покрытие кода тестами (отчёт в coverage.out)
+    cmds:
+      - >-
+        {{.DEV}} sh -c "go test -race -coverpkg=./internal/...,./cmd/...
+        -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1"
+
+  lint:
+    desc: Проверить код линтером
+    cmds:
+      - '{{.LINT}} golangci-lint run ./...'
+
+  fmt:
+    desc: Отформатировать код (gofmt + goimports)
+    cmds:
+      - '{{.LINT}} golangci-lint fmt ./...'
+
+  check:
+    desc: Всё, что проверяет CI — запускать перед коммитом
+    cmds:
+      - task: lint
+      - task: test
+
+  dev:
+    desc: Запустить бота из исходников (Ctrl+C — остановить)
+    preconditions:
+      - sh: test -f .env
+        msg: 'Нет файла .env — скопируйте .env.example в .env и заполните'
+    cmds:
+      - '{{.DEV}} go run ./cmd/bot'
+
+  build:
+    desc: Собрать бинарники для Linux и Windows в папку bin/
+    cmds:
+      - >-
+        {{.DEV}} sh -c "
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o bin/bot-linux-amd64 ./cmd/bot &&
+        CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o bin/bot-windows-amd64.exe ./cmd/bot"
+
+  # --- Запуск в Docker ---
+
+  up:
+    desc: Собрать образ и запустить бота в фоне
+    preconditions:
+      - sh: test -f .env
+        msg: 'Нет файла .env — скопируйте .env.example в .env и заполните'
+    cmds:
+      - docker compose up -d --build bot
+
+  logs:
+    desc: Логи бота в реальном времени
+    cmds:
+      - docker compose logs -f bot
+
+  down:
+    desc: Остановить бота (база в томе сохраняется)
+    cmds:
+      - docker compose down

@@ -25,7 +25,10 @@ func newRepo(t *testing.T) *Repo {
 }
 
 func TestRepository(t *testing.T) {
-	storagetest.Run(t, func(t *testing.T) booking.Repository { return newRepo(t) })
+	storagetest.Run(t, func(t *testing.T) booking.Repository {
+		t.Helper()
+		return newRepo(t)
+	})
 }
 
 // Ради этого шага всё и делалось: данные переживают перезапуск.

@@ -11,3 +11,6 @@ deploy_key.pub
 # IDE
 .idea/
 .vscode/
+
+# Отчёты тестов
+coverage.out

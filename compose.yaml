@@ -38,7 +38,19 @@ services:
       DB_PATH: ${DB_PATH:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
 
+  # Линтер той же версии, что и в CI:
+  #   docker compose run --rm lint golangci-lint run
+  lint:
+    profiles: [dev]
+    image: golangci/golangci-lint:v2.14.0
+    working_dir: /app
+    volumes:
+      - .:/app
+      - gomod:/go/pkg/mod
+      - lintcache:/root/.cache
+
 volumes:
   botdata:
   gomod:
   gocache:
+  lintcache:

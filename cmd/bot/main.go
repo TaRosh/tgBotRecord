@@ -19,9 +19,11 @@ import (
 func main() {
 	// Контекст отменяется по Ctrl+C или по SIGTERM (его шлёт `docker stop`).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	err := run(ctx, os.Getenv, os.Stdout)
+	// Не defer: os.Exit завершает процесс сразу и отложенные вызовы не выполняет.
+	stop()
 
-	if err := run(ctx, os.Getenv, os.Stdout); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
