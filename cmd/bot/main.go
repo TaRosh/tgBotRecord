@@ -12,7 +12,7 @@ import (
 
 	"github.com/TaRosh/tgBotRecord/internal/booking"
 	"github.com/TaRosh/tgBotRecord/internal/config"
-	"github.com/TaRosh/tgBotRecord/internal/storage/memory"
+	"github.com/TaRosh/tgBotRecord/internal/storage/sqlite"
 	"github.com/TaRosh/tgBotRecord/internal/telegram"
 )
 
@@ -47,8 +47,12 @@ func run(ctx context.Context, getenv func(string) string, out io.Writer) error {
 	)
 
 	// Сборка зависимостей: хранилище -> бизнес-логика -> Telegram.
-	// TODO(шаг 3): заменить memory на SQLite (cfg.DBPath).
-	repo := memory.New()
+	repo, err := sqlite.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer repo.Close()
+
 	svc := booking.NewService(repo, cfg.AdminID, time.Now)
 	router := telegram.NewRouter(svc, cfg.AdminID, cfg.Location, time.Now, log)
 
